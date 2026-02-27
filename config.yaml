@@ -1,0 +1,19 @@
+github:
+  repo: "yt-dlp/yt-dlp"
+  timeout: 5000
+
+check:
+  # Cron expression for check frequency
+  # Supported formats:
+  # - "0 6 * * *" (Run daily at 06:00 - Recommended to avoid GitHub peak hours)
+  # - "0 * * * *" (Run every hour)
+  cron: "0 6 * * *"
+  initial_push: false
+
+feishu:
+  webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/340353ef-39df-4477-b06a-817fc33f3362"
+  timeout: 5000
+  card_style: "default"
+
+storage:
+  path: ".state/last_version.json"
