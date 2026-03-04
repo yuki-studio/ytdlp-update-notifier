@@ -2,6 +2,8 @@ import argparse
 import schedule
 import time
 import sys
+import os
+from datetime import datetime
 from src.utils import load_config, logger
 from src.github import GitHubClient
 from src.feishu import FeishuClient
@@ -50,8 +52,13 @@ def check_update(config):
     
     should_push = True
     if last_version is None and not initial_push:
-        logger.info("First run and initial_push is false. Skipping notification.")
-        should_push = False
+        # In CI (GitHub Actions), state reset can happen due cache misses.
+        # Override skip behavior to avoid silently missing a real release.
+        if os.environ.get("CI", "").lower() == "true":
+            logger.warning("State file missing in CI; overriding initial_push=false to send notification.")
+        else:
+            logger.info("First run and initial_push is false. Skipping notification.")
+            should_push = False
     
     if should_push:
         success = feishu_client.send_update_notification(
@@ -67,6 +74,28 @@ def check_update(config):
     storage.update_last_version(latest_version)
     logger.info(f"State updated to version {latest_version}")
 
+def test_notify(config):
+    logger.info("Sending test notification...")
+
+    feishu_client = FeishuClient(
+        webhook_url=config['feishu']['webhook'],
+        timeout=config['feishu'].get('timeout', 5000)
+    )
+
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    release_url = f"https://github.com/{config['github']['repo']}/releases"
+    success = feishu_client.send_update_notification(
+        latest_version=f"TEST {now}",
+        previous_version="MANUAL_TEST",
+        release_url=release_url
+    )
+
+    if not success:
+        logger.error("Failed to send test notification.")
+        sys.exit(1)
+
+    logger.info("Test notification sent successfully.")
+
 def main():
     parser = argparse.ArgumentParser(description="yt-dlp Update Notifier")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -77,12 +106,14 @@ def main():
     # Daemon command
     daemon_parser = subparsers.add_parser("daemon", help="Run in daemon mode")
 
+    # Test notification command
+    test_parser = subparsers.add_parser("test-notify", help="Send a test Feishu notification")
+
     args = parser.parse_args()
 
     config = load_config()
 
     # Allow environment variable to override webhook URL (for GitHub Actions security)
-    import os
     env_webhook = os.environ.get("FEISHU_WEBHOOK")
     if env_webhook:
         config['feishu']['webhook'] = env_webhook
@@ -126,6 +157,8 @@ def main():
             except Exception as e:
                 logger.error(f"Error in daemon loop: {e}")
                 time.sleep(60)  # Wait a bit before retrying
+    elif args.command == "test-notify":
+        test_notify(config)
     else:
         parser.print_help()
 

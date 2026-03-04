@@ -1,6 +1,6 @@
-import requests
-import json
+﻿import requests
 from src.utils import logger
+
 
 class FeishuClient:
     def __init__(self, webhook_url, timeout=5000):
@@ -8,9 +8,8 @@ class FeishuClient:
         self.timeout = timeout / 1000.0
 
     def send_update_notification(self, latest_version, previous_version, release_url):
-        previous_version_display = previous_version if previous_version else "无记录"
-        
-        # Construct the interactive card
+        previous_version_display = previous_version if previous_version else "No previous record"
+
         card_content = {
             "msg_type": "interactive",
             "card": {
@@ -18,7 +17,7 @@ class FeishuClient:
                     "template": "blue",
                     "title": {
                         "tag": "plain_text",
-                        "content": "yt-dlp 版本更新提示"
+                        "content": "yt-dlp Update Alert"
                     }
                 },
                 "elements": [
@@ -26,14 +25,14 @@ class FeishuClient:
                         "tag": "div",
                         "text": {
                             "tag": "lark_md",
-                            "content": f"📦 **最新版本：** {latest_version}"
+                            "content": f"**Latest version:** {latest_version}"
                         }
                     },
                     {
                         "tag": "div",
                         "text": {
                             "tag": "lark_md",
-                            "content": f"⏮️ **上一版本：** {previous_version_display}"
+                            "content": f"**Previous version:** {previous_version_display}"
                         }
                     },
                     {
@@ -43,7 +42,7 @@ class FeishuClient:
                         "tag": "div",
                         "text": {
                             "tag": "lark_md",
-                            "content": "⚠️ 请及时迭代以保证产品正常运行"
+                            "content": "Please update in time to keep your product stable."
                         }
                     },
                     {
@@ -53,7 +52,7 @@ class FeishuClient:
                                 "tag": "button",
                                 "text": {
                                     "tag": "plain_text",
-                                    "content": "点击查看 Release Notes"
+                                    "content": "Open Release Notes"
                                 },
                                 "type": "primary",
                                 "url": release_url
@@ -72,14 +71,14 @@ class FeishuClient:
             )
             response.raise_for_status()
             result = response.json()
-            
+
             if result.get("code") != 0:
                 logger.error(f"Feishu API returned error: {result}")
                 return False
-            
+
             logger.info("Feishu notification sent successfully.")
             return True
-            
+
         except requests.exceptions.RequestException as e:
             logger.error(f"Error sending Feishu notification: {e}")
             return False
