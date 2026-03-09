@@ -42,3 +42,12 @@ class Storage:
         state["last_version"] = version
         state["last_checked_at"] = datetime.now().isoformat()
         self.save(state)
+
+    def mark_notified(self, version):
+        state = self.load()
+        now = datetime.now().isoformat()
+        state["last_version"] = version
+        state["last_notified_version"] = version
+        state["last_checked_at"] = now
+        state["last_notified_at"] = now
+        self.save(state)

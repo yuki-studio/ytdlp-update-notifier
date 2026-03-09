@@ -38,12 +38,19 @@ def check_update(config):
     # 2. Get last version
     state = storage.load()
     last_version = state.get("last_version")
+    last_notified_version = state.get("last_notified_version")
     
     logger.info(f"Latest version: {latest_version}, Last version: {last_version}")
 
     # 3. Compare
     if last_version == latest_version:
         logger.info("No new version found.")
+        return
+
+    # Deduplicate notifications by version.
+    if last_notified_version == latest_version:
+        logger.info(f"Version {latest_version} has already been notified. Skipping duplicate push.")
+        storage.update_last_version(latest_version)
         return
 
     # 4. Notify
@@ -69,6 +76,9 @@ def check_update(config):
         if not success:
             logger.error("Failed to send notification. Will not update state to retry later.")
             return
+        storage.mark_notified(latest_version)
+        logger.info(f"Notification marked for version {latest_version}")
+        return
 
     # 5. Update state
     storage.update_last_version(latest_version)
