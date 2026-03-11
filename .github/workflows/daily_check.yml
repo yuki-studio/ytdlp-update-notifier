@@ -15,6 +15,9 @@ on:
           - check
           - test-notify
 
+permissions:
+  contents: write
+
 jobs:
   check-update:
     runs-on: ubuntu-latest
@@ -22,6 +25,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ github.ref }}
 
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -33,14 +39,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Restore state
-      uses: actions/cache@v3
-      with:
-        path: .state/last_version.json
-        key: state-v1-${{ runner.os }}
-        restore-keys: |
-          state-v1-${{ runner.os }}
-
     - name: Run check
       env:
         FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
@@ -49,9 +47,20 @@ jobs:
         if [ -z "$CMD" ]; then CMD="check"; fi
         python -m src.main "$CMD"
 
-    - name: Save state
-      if: always()
-      uses: actions/cache/save@v3
-      with:
-        path: .state/last_version.json
-        key: state-v1-${{ runner.os }}-${{ github.run_id }}
+    - name: Commit updated state
+      run: |
+        if [ ! -f .state/last_version.json ]; then
+          echo "No state file generated."
+          exit 0
+        fi
+
+        if git diff --quiet -- .state/last_version.json; then
+          echo "State unchanged."
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add .state/last_version.json
+        git commit -m "chore: update notifier state [skip ci]"
+        git push origin HEAD:${GITHUB_REF#refs/heads/}

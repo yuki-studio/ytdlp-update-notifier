@@ -1,5 +1,7 @@
 __pycache__/
-.state/
+.state/*
+!.state/.gitkeep
+!.state/last_version.json
 *.log
 .vscode/
 .idea/
