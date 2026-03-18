@@ -1,13 +1,35 @@
 import argparse
+import json
 import schedule
 import time
 import sys
 import os
+import subprocess
 from datetime import datetime
 from src.utils import load_config, logger
 from src.github import GitHubClient
 from src.feishu import FeishuClient
 from src.storage import Storage
+
+
+def mask_webhook(webhook_url):
+    if not webhook_url:
+        return "unset"
+    return f"...{webhook_url[-8:]}"
+
+
+def get_committed_state():
+    try:
+        result = subprocess.run(
+            ["git", "show", "HEAD:.state/last_version.json"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        return json.loads(result.stdout)
+    except Exception as e:
+        logger.warning(f"Failed to read committed state from git: {e}")
+        return {}
 
 def check_update(config):
     logger.info("Starting update check...")
@@ -106,6 +128,50 @@ def test_notify(config):
 
     logger.info("Test notification sent successfully.")
 
+def force_notify_latest(config):
+    logger.info("Forcing notification for latest release...")
+
+    github_client = GitHubClient(
+        repo=config['github']['repo'],
+        token=config['github'].get('token'),
+        timeout=config['github'].get('timeout', 5000)
+    )
+
+    storage = Storage(config['storage']['path'])
+
+    feishu_client = FeishuClient(
+        webhook_url=config['feishu']['webhook'],
+        timeout=config['feishu'].get('timeout', 5000)
+    )
+
+    latest_release = github_client.get_latest_release()
+    if not latest_release:
+        logger.error("Failed to get latest release.")
+        sys.exit(1)
+
+    latest_version = latest_release['version']
+    release_url = latest_release['release_url']
+    state = storage.load()
+    previous_version = state.get("last_version")
+    if previous_version == latest_version:
+        committed_state = get_committed_state()
+        previous_version = committed_state.get("last_version") or committed_state.get("last_notified_version")
+    if previous_version == latest_version or not previous_version:
+        previous_version = "MANUAL_RESEND"
+
+    success = feishu_client.send_update_notification(
+        latest_version=latest_version,
+        previous_version=previous_version,
+        release_url=release_url
+    )
+
+    if not success:
+        logger.error("Failed to send forced notification.")
+        sys.exit(1)
+
+    storage.mark_notified(latest_version)
+    logger.info(f"Forced notification sent and marked for version {latest_version}.")
+
 def main():
     parser = argparse.ArgumentParser(description="yt-dlp Update Notifier")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
@@ -119,14 +185,29 @@ def main():
     # Test notification command
     test_parser = subparsers.add_parser("test-notify", help="Send a test Feishu notification")
 
+    # Force notification command
+    force_parser = subparsers.add_parser("force-notify", help="Send the latest release notification regardless of saved state")
+
     args = parser.parse_args()
 
     config = load_config()
 
-    # Allow environment variable to override webhook URL (for GitHub Actions security)
+    # Prefer the committed config webhook so local runs and CI runs stay consistent.
     env_webhook = os.environ.get("FEISHU_WEBHOOK")
-    if env_webhook:
+    config_webhook = config['feishu'].get('webhook')
+    if config_webhook:
+        if env_webhook and env_webhook != config_webhook:
+            logger.warning(
+                "FEISHU_WEBHOOK does not match config.yaml; using config webhook "
+                f"{mask_webhook(config_webhook)} instead of environment webhook {mask_webhook(env_webhook)}"
+            )
+        else:
+            logger.info(f"Using Feishu webhook from config: {mask_webhook(config_webhook)}")
+    elif env_webhook:
         config['feishu']['webhook'] = env_webhook
+        logger.info(f"Using Feishu webhook from environment fallback: {mask_webhook(env_webhook)}")
+    else:
+        logger.warning("No Feishu webhook configured.")
 
     if args.command == "check":
         check_update(config)
@@ -169,6 +250,8 @@ def main():
                 time.sleep(60)  # Wait a bit before retrying
     elif args.command == "test-notify":
         test_notify(config)
+    elif args.command == "force-notify":
+        force_notify_latest(config)
     else:
         parser.print_help()
 
